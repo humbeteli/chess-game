@@ -17,12 +17,12 @@ Bu proyekt, brauzerdə oynanıla bilən bir şahmat oyunudur. Ağ və qara fiqur
 
 ## Ana Səhifə
 
-(./images/menyu.jpeg)
+![Ana Sehife](./images/menyu.jpeg)
 
 ## Oyun
 
-(./images/oyun.jpeg)
+![Oyun](./images/oyun.jpeg)
 
 ## Mat
 
-(./images/mat.jpeg)
+![Mat](./images/mat.jpeg)
