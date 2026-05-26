@@ -1,104 +1,120 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="az">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>CodeMate</title>
-  <link rel="stylesheet" href="style.css"/>
-  <link rel="icon" href="icons/site-logo-chess.svg">
-</head>
-<body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CodeMate</title>
+    <link rel="stylesheet" href="style.css" />
+    <link rel="icon" href="icons/site-logo-chess.svg" />
+  </head>
+  <body>
+    <!-- ══ ANA SƏHİFƏ ══ -->
+    <div id="screen-menu" class="screen active">
+      <div class="menu-wrap">
+        <div class="menu-crown"><img src="icons/chess-logo.svg" alt="" /></div>
+        <h1 class="menu-title">CodeMate</h1>
+        <p class="menu-sub">Kompüterə qarşı oyna</p>
+        <div class="menu-card">
+          <div class="field">
+            <label class="field-label">Oyun növü</label>
+            <div class="segmented" id="seg-mode">
+              <button
+                class="seg-btn active"
+                data-icon="icons/friend.svg"
+                data-active-icon="icons/friend-active.svg"
+              >
+                <img src="icons/friend-active.svg" alt="" />
+                Dostluq
+              </button>
+              <button class="seg-btn" data-value="challenge">
+                <img src="icons/sword-active.svg" alt="" /> Meydan oxuma
+              </button>
+            </div>
+            <p class="field-hint" id="mode-hint">
+              Gedişləri geri/irəli almaq mümkündür.
+            </p>
+          </div>
 
-<!-- ══ ANA SƏHİFƏ ══ -->
-<div id="screen-menu" class="screen active">
-  <div class="menu-wrap">
-    <div class="menu-crown"><img src="icons/chess-logo.svg" alt=""></div>
-    <h1 class="menu-title">CodeMate</h1>
-    <p class="menu-sub">Kompüterə qarşı oyna</p>
-    <div class="menu-card">
+          <div class="field">
+            <label class="field-label">Səviyyə</label>
+            <div class="segmented" id="seg-level">
+              <button class="seg-btn" data-value="1">Zəif</button>
+              <button class="seg-btn active" data-value="2">Orta</button>
+              <button class="seg-btn" data-value="3">Güclü</button>
+            </div>
+          </div>
 
-      <div class="field">
-        <label class="field-label">Oyun növü</label>
-        <div class="segmented" id="seg-mode">
-          <button class="seg-btn active" data-value="friendly">🤝 Dostluq</button>
-          <button class="seg-btn" data-value="challenge">⚔️ Meydan oxuma</button>
+          <div class="field">
+            <label class="field-label">Rəng</label>
+            <div class="segmented" id="seg-color">
+              <button class="seg-btn active" data-value="w">
+                <img src="icons/a-at.svg" alt="" /> Ağ
+              </button>
+              <button class="seg-btn" data-value="b">
+                <img src="icons/color-black.svg" alt="" /> Qara
+              </button>
+              <button class="seg-btn" data-value="r">
+                <img src="icons/dice.svg" alt="" /> Təsadüfi
+              </button>
+            </div>
+          </div>
+
+          <button id="btn-start" class="btn-primary">Oyuna Başla</button>
         </div>
-        <p class="field-hint" id="mode-hint">Gedişləri geri/irəli almaq mümkündür.</p>
       </div>
+    </div>
 
-      <div class="field">
-        <label class="field-label">Səviyyə</label>
-        <div class="segmented" id="seg-level">
-          <button class="seg-btn" data-value="1">Zəif</button>
-          <button class="seg-btn active" data-value="2">Orta</button>
-          <button class="seg-btn" data-value="3">Güclü</button>
+    <!-- ══ OYUN SƏHİFƏSİ ══ -->
+    <div id="screen-game" class="screen">
+      <div class="game-wrap">
+        <!-- Top bar -->
+        <div class="top-bar">
+          <button id="btn-menu" class="icon-btn" title="Menyu">
+            <img src="icons/back-chess.svg" alt="" />
+          </button>
+          <div class="player-info">
+            <span class="player-badge" id="badge-top">●</span>
+            <span class="player-label" id="label-top">Bot</span>
+          </div>
+          <span id="game-message" class="game-msg">Hərəkət seçin.</span>
+        </div>
+
+        <!-- Move history — taxtadan YUXARIDA, 1 sətir horizontal -->
+        <div class="moves-panel" id="moves-panel">
+          <div class="moves-list" id="moves-list"></div>
+        </div>
+
+        <!-- Board — koordinatlar xananın içindədir -->
+        <div class="board-shell">
+          <div id="board" class="board"></div>
+        </div>
+
+        <!-- Bottom bar -->
+        <div class="bottom-bar">
+          <div class="player-info">
+            <span class="player-badge" id="badge-bottom">●</span>
+            <span class="player-label" id="label-bottom">Sən</span>
+          </div>
+
+          <div class="top-bar-right">
+            <button id="btn-undo" class="icon-btn" title="Geri al">↩</button>
+            <button id="btn-redo" class="icon-btn" title="İrəli al">↪</button>
+            <button id="btn-resign" class="icon-btn danger" title="Təslim ol">
+              🏳️
+            </button>
+          </div>
         </div>
       </div>
+    </div>
 
-      <div class="field">
-        <label class="field-label">Rəng</label>
-        <div class="segmented" id="seg-color">
-          <button class="seg-btn active" data-value="w">♔ Ağ</button>
-          <button class="seg-btn" data-value="b">♚ Qara</button>
-          <button class="seg-btn" data-value="r">🎲 Təsadüfi</button>
-        </div>
+    <!-- ══ MODAL ══ -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+      <div class="modal-box">
+        <p id="modal-text"></p>
+        <div id="modal-btns" class="modal-btns"></div>
       </div>
-
-      <button id="btn-start" class="btn-primary">Oyuna Başla</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ OYUN SƏHİFƏSİ ══ -->
-<div id="screen-game" class="screen">
-  <div class="game-wrap">
-
-    <!-- Top bar -->
-    <div class="top-bar">
-      <button id="btn-menu" class="icon-btn" title="Menyu"><img src="icons/back-chess.svg" alt=""></button>
-      <div class="player-info">
-        <span class="player-badge" id="badge-top">●</span>
-        <span class="player-label" id="label-top">Bot</span>
-      </div>
-      <span id="game-message" class="game-msg">Hərəkət seçin.</span>
     </div>
 
-    <!-- Move history — taxtadan YUXARIDA, 1 sətir horizontal -->
-    <div class="moves-panel" id="moves-panel">
-      <div class="moves-list" id="moves-list"></div>
-    </div>
-
-    <!-- Board — koordinatlar xananın içindədir -->
-    <div class="board-shell">
-      <div id="board" class="board"></div>
-    </div>
-
-    <!-- Bottom bar -->
-    <div class="bottom-bar">
-      <div class="player-info">
-        <span class="player-badge" id="badge-bottom">●</span>
-        <span class="player-label" id="label-bottom">Sən</span>
-      </div>
-
-      <div class="top-bar-right">
-        <button id="btn-undo"   class="icon-btn" title="Geri al">↩</button>
-        <button id="btn-redo"   class="icon-btn" title="İrəli al">↪</button>
-        <button id="btn-resign" class="icon-btn danger" title="Təslim ol">🏳️</button>
-      </div>
-      
-    </div>
-
-  </div>
-</div>
-
-<!-- ══ MODAL ══ -->
-<div id="modal-overlay" class="modal-overlay hidden">
-  <div class="modal-box">
-    <p id="modal-text"></p>
-    <div id="modal-btns" class="modal-btns"></div>
-  </div>
-</div>
-
-<script src="script.js"></script>
-</body>
+    <script src="script.js"></script>
+  </body>
 </html>

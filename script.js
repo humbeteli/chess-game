@@ -13,7 +13,15 @@ const BOT_NAMES = [
   "Geralt","Kratos","Ezio","Arthur Morgan","Joel","V","Agent 47","Master Chief",
   "Walter White","Tony Soprano","Tyrion Lannister","Jon Snow","Hannibal Lecter",
   "Don Corleone","El Profesor","Sherlock Holmes","Magneto","Batman",
-  "Freddie Mercury","David Bowie","Elvis","Michael Jackson","Kurt Cobain","Bravodaki kassir qız","Fəhlə baba","Çöplədən işçi","Fatih Sultan Mehmed","Yavuz Sultan Selim","Şah İsmayıl Xətai","Gus Fring","Jesse Pinkman","Polat Alemdar","Mehmet Karahanlı","Aslan Akbey","Memati","Süleyman Çakır","Donald Trump","RTE","İ. Əliyev","Şəhriyar Məmmədyarov","Teymur Rəcəbov","Hümbətəli Qurbanov","Scorpion","Sub-Zero","Johnny Cage","Raiden","Liu Kang","Kung Lao","Ermac","Noob Saibot","Quan Chi","Shang Tsung","Shao Kahn","Conor McGregor","Putin","Cəmil Heydərov","Murad Rüstəmov","Boris Zaharyas","Shinnok","Zeus","RA","Amon","Super Mario","Big Mario",
+  "Freddie Mercury","David Bowie","Elvis","Michael Jackson","Kurt Cobain",
+  "Bravodaki kassir qız","Fəhlə baba","Çöplədən işçi","Fatih Sultan Mehmed",
+  "Yavuz Sultan Selim","Şah İsmayıl Xətai","Gus Fring","Jesse Pinkman",
+  "Polat Alemdar","Mehmet Karahanlı","Aslan Akbey","Memati","Süleyman Çakır",
+  "Donald Trump","RTE","İ. Əliyev","Şəhriyar Məmmədyarov","Teymur Rəcəbov",
+  "Hümbətəli Qurbanov","Scorpion","Sub-Zero","Johnny Cage","Raiden","Liu Kang",
+  "Kung Lao","Ermac","Noob Saibot","Quan Chi","Shang Tsung","Shao Kahn",
+  "Conor McGregor","Putin","Cəmil Heydərov","Murad Rüstəmov","Boris Zaharyas",
+  "Shinnok","Zeus","RA","Amon","Super Mario","Big Mario",
 ];
 function randomBotName() {
   return BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)];
@@ -42,11 +50,22 @@ const SOUNDS = {
   castle:    new Audio("./sounds/castle.mp3"),
 };
 function playSound(name) {
+  if (!settings.sound) return;
   const s = SOUNDS[name];
   if (!s) return;
   s.currentTime = 0;
   s.play().catch(() => {});
 }
+
+// ══════════════════════════════════════════════
+// SETTINGS
+// ══════════════════════════════════════════════
+const settings = {
+  confirmMove:   false,
+  showMoves:     true,
+  sound:         true,
+  autoQueen:     false,
+};
 
 // ══════════════════════════════════════════════
 // CONSTANTS
@@ -86,7 +105,13 @@ let savedGame = null;
 let moveNotation  = [];
 let halfMoveCount = 0;
 
-let activeWorker = null; // cari bot worker
+let activeWorker = null;
+
+// Pending move confirmation state
+let pendingMove = null; // { fromRow, fromCol, mv, mover }
+
+// Pending promotion state
+let pendingPromotion = null; // { fromRow, fromCol, mv, mover }
 
 // ══════════════════════════════════════════════
 // DOM
@@ -108,6 +133,9 @@ const modalText    = document.getElementById("modal-text");
 const modalBtns    = document.getElementById("modal-btns");
 const movesList    = document.getElementById("moves-list");
 const movesPanel   = document.getElementById("moves-panel");
+
+// Confirm bar DOM (injected into bottom-bar)
+let confirmBar = null;
 
 // ══════════════════════════════════════════════
 // SEGMENTED CONTROLS
@@ -166,7 +194,6 @@ function showScreen(name) {
 
 btnMenuBtn.addEventListener("click", () => {
   if (gameOver || !board.length) { showScreen("menu"); return; }
-  // Aktiv worker varsa dayandır
   if (activeWorker) { activeWorker.terminate(); activeWorker = null; }
   savedGame = snapshotState();
   showScreen("menu");
@@ -262,6 +289,9 @@ function restoreState(s) {
   mateWinnerPos = s.mateWinnerPos ? {...s.mateWinnerPos} : null;
   selectedSq       = null;
   highlightedMoves = [];
+  pendingMove      = null;
+  pendingPromotion = null;
+  hideConfirmBar();
   updateLabels();
   updateBadges();
 }
@@ -269,10 +299,19 @@ function restoreState(s) {
 // ══════════════════════════════════════════════
 // START
 // ══════════════════════════════════════════════
-document.getElementById("btn-start").addEventListener("click", startGame);
+document.getElementById("btn-start").addEventListener("click", () => {
+  // If there's a live saved game, confirm before discarding
+  if (savedGame) {
+    showModal("Cari oyun ləğv edilsin?", [
+      { label: "Bəli, yeni oyun", cls: "danger",     action: doStartGame },
+      { label: "Xeyr, davam et",  cls: "secondary",  action: continueGame },
+    ]);
+  } else {
+    doStartGame();
+  }
+});
 
-function startGame() {
-  // Aktiv worker varsa dayandır
+function doStartGame() {
   if (activeWorker) { activeWorker.terminate(); activeWorker = null; }
 
   aiDepth  = parseInt(chosenLevel, 10);
@@ -300,8 +339,11 @@ function startGame() {
   savedGame       = null;
   moveNotation    = [];
   halfMoveCount   = 0;
+  pendingMove     = null;
+  pendingPromotion= null;
 
   removeContinueButton();
+  hideConfirmBar();
   updateLabels();
   updateBadges();
   showScreen("game");
@@ -310,6 +352,9 @@ function startGame() {
 
   if (aiColor === "w") scheduleBot();
 }
+
+// keep old alias
+function startGame() { doStartGame(); }
 
 function updateLabels() {
   labelTop.textContent   = playerColor === "w" ? `${botName}` : `${botName}`;
@@ -344,14 +389,12 @@ function renderBoard() {
       sq.dataset.row = row;
       sq.dataset.col = col;
 
-      // Rank label — sol sütun
       if (ci === 0) {
         const span = document.createElement("span");
         span.className = "coord-rank";
         span.textContent = String(8 - row);
         sq.appendChild(span);
       }
-      // File label — alt sətir
       if (ri === 7) {
         const span = document.createElement("span");
         span.className = "coord-file";
@@ -375,13 +418,20 @@ function renderBoard() {
       if (selectedSq&&selectedSq.row===row&&selectedSq.col===col)
         sq.classList.add("selected");
 
-      if (highlightedMoves.some(m=>m.row===row&&m.col===col))
+      // Respect showMoves setting
+      if (settings.showMoves && highlightedMoves.some(m=>m.row===row&&m.col===col))
         sq.classList.add("highlight");
 
       if (isKingSquareInCheck(row,col)) sq.classList.add("in-check");
 
       if (mateLoserPos &&mateLoserPos.row===row &&mateLoserPos.col===col)  sq.classList.add("mate-loser");
       if (mateWinnerPos&&mateWinnerPos.row===row&&mateWinnerPos.col===col) sq.classList.add("mate-winner");
+
+      // Dim pending move source square
+      if (pendingMove && pendingMove.fromRow===row && pendingMove.fromCol===col)
+        sq.classList.add("selected");
+      if (pendingMove && pendingMove.mv.row===row && pendingMove.mv.col===col)
+        sq.classList.add("last-move");
 
       sq.addEventListener("click", onSquareClick);
       boardEl.appendChild(sq);
@@ -394,41 +444,65 @@ function getSquareEl(row, col) {
 }
 
 // ══════════════════════════════════════════════
-// SMOOTH ANIMATION
+// SMOOTH ANIMATION — Web Animations API (mobile-safe)
 // ══════════════════════════════════════════════
 function animateMove(fromRow, fromCol, toRow, toCol, piece, callback) {
   const sqSize = boardEl.offsetWidth / 8;
-  const flip   = playerColor === "b";
-  const vPos   = (r,c) => ({
-    x: (flip ? 7-c : c) * sqSize,
-    y: (flip ? 7-r : r) * sqSize,
-  });
-  const from = vPos(fromRow, fromCol);
-  const to   = vPos(toRow,   toCol);
 
+  // Board not visible or zero-size — skip animation entirely
+  if (sqSize <= 0) { callback(); return; }
+
+  const flip = playerColor === "b";
+  const posX = c => (flip ? 7 - c : c) * sqSize;
+  const posY = r => (flip ? 7 - r : r) * sqSize;
+
+  const fx = posX(fromCol), fy = posY(fromRow);
+  const tx = posX(toCol),   ty = posY(toRow);
+
+  // Hide source and destination images during flight
   const srcImg  = getSquareEl(fromRow, fromCol)?.querySelector("img");
   const destImg = getSquareEl(toRow,   toCol)  ?.querySelector("img");
-  if (srcImg)  srcImg.style.opacity  = "0";
-  if (destImg) destImg.style.opacity = "0";
+  if (srcImg)  srcImg.style.visibility = "hidden";
+  if (destImg) destImg.style.visibility = "hidden";
 
+  // Create flying piece — positioned absolutely inside board
   const flyer = document.createElement("div");
-  flyer.className = "moving-piece";
-  flyer.style.transform = `translate(${from.x}px,${from.y}px)`;
+  flyer.style.cssText = [
+    "position:absolute",
+    "left:0","top:0",
+    "width:" + sqSize + "px","height:" + sqSize + "px",
+    "display:flex","align-items:center","justify-content:center",
+    "pointer-events:none","z-index:50",
+    "will-change:transform",
+  ].join(";") + ";";
   const img = document.createElement("img");
   img.src = PIECE_SYMBOLS[piece] || "";
   img.draggable = false;
+  img.style.cssText = "width:74%;height:74%;object-fit:contain;";
   flyer.appendChild(img);
   boardEl.appendChild(flyer);
 
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    flyer.style.transform = `translate(${to.x}px,${to.y}px)`;
-  }));
-
-  flyer.addEventListener("transitionend", () => {
+  // Cleanup function — called exactly once
+  let called = false;
+  const done = () => {
+    if (called) return;
+    called = true;
     flyer.remove();
-    if (srcImg) srcImg.style.opacity = "";
+    if (srcImg)  srcImg.style.visibility = "";
+    if (destImg) destImg.style.visibility = "";
     callback();
-  }, { once: true });
+  };
+
+  // Web Animations API — more reliable on mobile than CSS transitions
+  const anim = flyer.animate(
+    [
+      { transform: "translate(" + fx + "px," + fy + "px)" },
+      { transform: "translate(" + tx + "px," + ty + "px)" },
+    ],
+    { duration: 180, easing: "ease-in-out", fill: "forwards" }
+  );
+
+  anim.finished.then(done).catch(done);
 }
 
 // ══════════════════════════════════════════════
@@ -461,7 +535,6 @@ function renderMoveHistory() {
     movesList.appendChild(wrap);
   });
 
-  // Sağa scroll
   if (movesPanel) movesPanel.scrollLeft = movesPanel.scrollWidth;
 }
 
@@ -474,7 +547,7 @@ function getNotationClass(n) {
 // ══════════════════════════════════════════════
 // ALGEBRAIC NOTATION
 // ══════════════════════════════════════════════
-function toAlgebraic(fromRow, fromCol, mv, boardBefore, mover, isCheckmate, isCheck) {
+function toAlgebraic(fromRow, fromCol, mv, boardBefore, mover, isCheckmate, isCheck, promoType) {
   const piece     = boardBefore[fromRow][fromCol];
   const t         = piece[1];
   const toFile    = FILE_CHARS[mv.col];
@@ -508,7 +581,7 @@ function toAlgebraic(fromRow, fromCol, mv, boardBefore, mover, isCheckmate, isCh
     }
     const capStr   = isCapture ? "x" : "";
     const fromFile = t==="P"&&isCapture ? FILE_CHARS[fromCol] : "";
-    const promoStr = isPromo ? "=Q" : "";
+    const promoStr = isPromo ? "="+(promoType||"Q") : "";
     notation = `${pieceChar}${disambig}${fromFile}${capStr}${toFile}${toRank}${promoStr}`;
   }
 
@@ -539,8 +612,7 @@ function updateBadges() {
 }
 
 // ══════════════════════════════════════════════
-// CHESS HELPERS (script.js-də də lazımdır —
-// notation, legal move highlight, check göstərişi üçün)
+// CHESS HELPERS
 // ══════════════════════════════════════════════
 const inBounds   = (r,c) => r>=0&&r<8&&c>=0&&c<8;
 const clr        = p => p?p[0]:"";
@@ -634,7 +706,7 @@ function isKingInCheck(color,st){
   return kp?isAttacked(kp.row,kp.col,color,st):false;
 }
 
-function applyMove(fromRow,fromCol,mv,st,color,cRights){
+function applyMove(fromRow,fromCol,mv,st,color,cRights,promoType){
   const nst=cloneBoard(st);
   const pc=nst[fromRow][fromCol], t_=tp(pc);
   let newEp=null;
@@ -646,7 +718,7 @@ function applyMove(fromRow,fromCol,mv,st,color,cRights){
   if(mv.flags.includes("doublePush"))
     newEp={row:color==="w"?mv.row+1:mv.row-1,col:mv.col};
   if(t_==="P"&&(mv.row===0||mv.row===7))
-    nst[mv.row][mv.col]=color+"Q";
+    nst[mv.row][mv.col]=color+(promoType||"Q");
   if(mv.flags.includes("castleK")){const rank=color==="w"?7:0;nst[rank][5]=color+"R";nst[rank][7]="";}
   if(mv.flags.includes("castleQ")){const rank=color==="w"?7:0;nst[rank][3]=color+"R";nst[rank][0]="";}
   if(t_==="K"){newR[color+"K"]=false;newR[color+"Q"]=false;}
@@ -676,13 +748,14 @@ function hasAnyLegalMoves(color,st,epTgt,cRights){
 // ══════════════════════════════════════════════
 function onSquareClick(e){
   if(gameOver||currentPlayer!==playerColor) return;
+  if(pendingMove || pendingPromotion) return; // block clicks during confirm/promo
   const row=+e.currentTarget.dataset.row;
   const col=+e.currentTarget.dataset.col;
   const piece=board[row][col];
 
   if(selectedSq&&highlightedMoves.some(m=>m.row===row&&m.col===col)){
     const mv=highlightedMoves.find(m=>m.row===row&&m.col===col);
-    executeMove(selectedSq.row,selectedSq.col,mv,playerColor,true);
+    handlePlayerMove(selectedSq.row,selectedSq.col,mv);
     return;
   }
 
@@ -697,55 +770,176 @@ function onSquareClick(e){
 }
 
 // ══════════════════════════════════════════════
-// EXECUTE + COMMIT MOVE
+// PLAYER MOVE PIPELINE
+// player move → (confirm?) → (promote?) → execute
 // ══════════════════════════════════════════════
-function executeMove(fromRow,fromCol,mv,mover,animate){
-  const piece=board[fromRow][fromCol];
-  if(animate){
-    animateMove(fromRow,fromCol,mv.row,mv.col,piece,()=>commitMove(fromRow,fromCol,mv,mover));
+function handlePlayerMove(fromRow, fromCol, mv) {
+  const piece = board[fromRow][fromCol];
+  const isPromoMove = tp(piece) === "P" && (mv.row === 0 || mv.row === 7);
+
+  if (settings.confirmMove) {
+    // Show confirm bar first, then promotion if needed
+    pendingMove = { fromRow, fromCol, mv, mover: playerColor, isPromo: isPromoMove };
+    selectedSq = null; highlightedMoves = [];
+    renderBoard();
+    showConfirmBar();
+  } else if (isPromoMove && !settings.autoQueen) {
+    // Ask promotion directly
+    selectedSq = null; highlightedMoves = [];
+    renderBoard();
+    showPromotionDialog(fromRow, fromCol, mv, playerColor);
   } else {
-    commitMove(fromRow,fromCol,mv,mover);
+    selectedSq = null; highlightedMoves = [];
+    executeMove(fromRow, fromCol, mv, playerColor, true, null);
   }
 }
 
-function commitMove(fromRow,fromCol,mv,mover){
-  const boardBefore=cloneBoard(board);
+// ── Confirm Bar ──────────────────────────────
+function showConfirmBar() {
+  if (confirmBar) return;
+  const bottomBar = document.querySelector(".bottom-bar");
+
+  // Hide bottom-bar children in place — layout size preserved
+  Array.from(bottomBar.children).forEach(ch => ch.style.visibility = "hidden");
+
+  // Build confirm bar and inject INSIDE bottom-bar so it occupies the same space
+  confirmBar = document.createElement("div");
+  confirmBar.id = "confirm-bar";
+  confirmBar.style.cssText = "position:absolute;inset:0;display:flex;align-items:center;gap:8px;padding:0 2px;";
+
+  const label = document.createElement("span");
+  label.style.cssText = "font-size:.82rem;color:var(--text-muted);flex:1;";
+  label.textContent = "Gedişi təsdiq et?";
+
+  const btnYes = document.createElement("button");
+  btnYes.style.cssText = "padding:7px 18px;border:none;border-radius:8px;background:var(--accent);color:#111;font-weight:700;font-size:.82rem;cursor:pointer;";
+  btnYes.textContent = "✓ Təsdiq";
+  btnYes.addEventListener("click", onConfirmYes);
+
+  const btnNo = document.createElement("button");
+  btnNo.style.cssText = "padding:7px 14px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.06);color:var(--text);font-size:.82rem;cursor:pointer;";
+  btnNo.textContent = "✕ Ləğv";
+  btnNo.addEventListener("click", onConfirmNo);
+
+  confirmBar.appendChild(label);
+  confirmBar.appendChild(btnNo);
+  confirmBar.appendChild(btnYes);
+  
+
+  // bottom-bar needs position:relative for absolute child to work
+  bottomBar.style.position = "relative";
+  bottomBar.appendChild(confirmBar);
+}
+
+function hideConfirmBar() {
+  if (!confirmBar) return;
+  confirmBar.remove();
+  confirmBar = null;
+  const bottomBar = document.querySelector(".bottom-bar");
+  bottomBar.style.position = "";
+  Array.from(bottomBar.children).forEach(ch => ch.style.visibility = "");
+}
+
+function onConfirmYes() {
+  hideConfirmBar();
+  const pm = pendingMove;
+  pendingMove = null;
+  if (!pm) return;
+  if (pm.isPromo && !settings.autoQueen) {
+    showPromotionDialog(pm.fromRow, pm.fromCol, pm.mv, pm.mover);
+  } else {
+    executeMove(pm.fromRow, pm.fromCol, pm.mv, pm.mover, true, null);
+  }
+}
+
+function onConfirmNo() {
+  hideConfirmBar();
+  pendingMove = null;
+  selectedSq = null; highlightedMoves = [];
+  renderBoard();
+  setMsg("Hərəkət seçin.");
+}
+
+// ── Promotion Dialog ──────────────────────────
+function showPromotionDialog(fromRow, fromCol, mv, mover) {
+  pendingPromotion = { fromRow, fromCol, mv, mover };
+
+  const color = mover;
+  const pieces = ["Q","R","B","N"];
+  const icons = { Q: PIECE_SYMBOLS[color+"Q"], R: PIECE_SYMBOLS[color+"R"], B: PIECE_SYMBOLS[color+"B"], N: PIECE_SYMBOLS[color+"N"] };
+  const names = { Q:"Vəzir", R:"Top", B:"Fil", N:"At" };
+
+  modalText.textContent = "Hansı fiqura çevrilsin?";
+  modalBtns.innerHTML = "";
+
+  pieces.forEach(p => {
+    const btn = document.createElement("button");
+    btn.className = "modal-btn secondary";
+    btn.style.cssText = "display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 14px;";
+    btn.innerHTML = `<img src="${icons[p]}" style="width:36px;height:36px;object-fit:contain" draggable="false"><span style="font-size:.75rem">${names[p]}</span>`;
+    btn.addEventListener("click", () => {
+      hideModal();
+      const pp = pendingPromotion;
+      pendingPromotion = null;
+      executeMove(pp.fromRow, pp.fromCol, pp.mv, pp.mover, true, p);
+    });
+    modalBtns.appendChild(btn);
+  });
+
+  modalOverlay.classList.remove("hidden");
+}
+
+// ══════════════════════════════════════════════
+// EXECUTE + COMMIT MOVE
+// ══════════════════════════════════════════════
+function executeMove(fromRow, fromCol, mv, mover, animate, promoType) {
+  const piece = board[fromRow][fromCol];
+  if (animate) {
+    animateMove(fromRow, fromCol, mv.row, mv.col, piece, () => commitMove(fromRow, fromCol, mv, mover, promoType));
+  } else {
+    commitMove(fromRow, fromCol, mv, mover, promoType);
+  }
+}
+
+function commitMove(fromRow, fromCol, mv, mover, promoType) {
+  const boardBefore = cloneBoard(board);
 
   history.push(makeSnap());
-  redoStack=[];
+  redoStack = [];
 
-  const isCapture=!!board[mv.row][mv.col]||mv.flags.includes("enPassant");
-  const isCastle =mv.flags.includes("castleK")||mv.flags.includes("castleQ");
+  const isCapture = !!board[mv.row][mv.col] || mv.flags.includes("enPassant");
+  const isCastle  = mv.flags.includes("castleK") || mv.flags.includes("castleQ");
 
-  const[nst,newEp,newR]=applyMove(fromRow,fromCol,mv,board,mover,castlingRights);
-  board=nst; enPassantTarget=newEp; castlingRights=newR;
-  lastFrom={row:fromRow,col:fromCol};
-  lastTo=  {row:mv.row, col:mv.col};
-  selectedSq=null; highlightedMoves=[];
+  const [nst, newEp, newR] = applyMove(fromRow, fromCol, mv, board, mover, castlingRights, promoType);
+  board = nst; enPassantTarget = newEp; castlingRights = newR;
+  lastFrom = {row:fromRow, col:fromCol};
+  lastTo   = {row:mv.row,  col:mv.col};
+  selectedSq = null; highlightedMoves = [];
 
-  const next       = mover==="w"?"b":"w";
-  const inCheck    = isKingInCheck(next,board);
-  const hasMoves   = hasAnyLegalMoves(next,board,enPassantTarget,castlingRights);
-  const isCheckmate= !hasMoves&&inCheck;
+  const next        = mover === "w" ? "b" : "w";
+  const inCheck     = isKingInCheck(next, board);
+  const hasMoves    = hasAnyLegalMoves(next, board, enPassantTarget, castlingRights);
+  const isCheckmate = !hasMoves && inCheck;
 
-  const notation=toAlgebraic(fromRow,fromCol,mv,boardBefore,mover,isCheckmate,inCheck);
-  addMoveToHistory(notation,mover);
+  const notation = toAlgebraic(fromRow, fromCol, mv, boardBefore, mover, isCheckmate, inCheck, promoType);
+  addMoveToHistory(notation, mover);
 
-  if(isCheckmate)    playSound("checkmate");
-  else if(inCheck)   playSound("check");
-  else if(isCastle)  playSound("castle");
-  else if(isCapture) playSound("capture");
+  if (isCheckmate)   playSound("checkmate");
+  else if (inCheck)  playSound("check");
+  else if (isCastle) playSound("castle");
+  else if (isCapture)playSound("capture");
   else               playSound("move");
 
-  if(!hasMoves){
-    gameOver=true;
-    if(inCheck){
-      mateLoserPos =getKingPos(next, board);
-      mateWinnerPos=getKingPos(mover,board);
-      const winner=mover===playerColor?"Sən":botName;
+  if (!hasMoves) {
+    gameOver = true;
+    if (inCheck) {
+      mateLoserPos  = getKingPos(next, board);
+      mateWinnerPos = getKingPos(mover, board);
+      const winner = mover === playerColor ? "Sən" : botName;
       setMsg(`Mat! Qalib: ${winner} 🏆`);
       renderBoard();
-      setTimeout(()=>launchConfetti(),350);
+      // Only confetti if PLAYER wins
+      if (mover === playerColor) setTimeout(() => launchConfetti(), 350);
     } else {
       setMsg("Pat: Bərabərlik!");
       renderBoard();
@@ -754,41 +948,42 @@ function commitMove(fromRow,fromCol,mv,mover){
     return;
   }
 
-  currentPlayer=next;
+  currentPlayer = next;
   updateBadges();
-  if(inCheck) setMsg(`${next===playerColor?"Sən":botName} Şah!`);
-  else        setMsg(next===playerColor?"Hərəkət seçin.":`${botName} düşünür...`);
+  if (inCheck) setMsg(`${next===playerColor?"Sən":botName} Şah!`);
+  else         setMsg(next===playerColor?"Hərəkət seçin.":`${botName} düşünür...`);
 
   renderBoard();
-  if(!gameOver&&currentPlayer===aiColor) scheduleBot();
+  if (!gameOver && currentPlayer === aiColor) scheduleBot();
 }
 
 // ══════════════════════════════════════════════
 // GAME OVER MODAL
 // ══════════════════════════════════════════════
-function showGameOverModal(winner){
-  setTimeout(()=>{
-    const msg=winner===playerColor
-      ?`Təbriklər! ${botName}-ı məğlub etdin! 🏆`
-      :`${botName} səni mat etdi. Növbəti dəfə daha yaxşı olarsan!`;
-    showModal(msg,[
-      {label:"Yenidən oyna",cls:"primary",  action:startGame},
-      {label:"Ana səhifə",  cls:"secondary",action:()=>showScreen("menu")},
+function showGameOverModal(winner) {
+  setTimeout(() => {
+    const msg = winner === playerColor
+      ? `Təbriklər! ${botName}-ı məğlub etdin! 🏆`
+      : `${botName} səni mat etdi. Növbəti dəfə daha yaxşı olarsan!`;
+    showModal(msg, [
+      { label:"Yenidən oyna", cls:"primary",   action: doStartGame },
+      { label:"Ana səhifə",   cls:"secondary", action: () => showScreen("menu") },
     ]);
-  },1400);
+  }, 1400);
 }
 
 // ══════════════════════════════════════════════
 // UNDO
 // ══════════════════════════════════════════════
-btnUndo.addEventListener("click",()=>{
-  if(gameMode==="challenge"||history.length===0) return;
-  if(activeWorker){activeWorker.terminate();activeWorker=null;}
+btnUndo.addEventListener("click", () => {
+  if (gameMode==="challenge" || history.length===0) return;
+  if (activeWorker) { activeWorker.terminate(); activeWorker = null; }
+  hideConfirmBar(); pendingMove = null; pendingPromotion = null;
   redoStack.push(makeSnap());
-  const prev=history.pop();
+  const prev = history.pop();
   applySnap(prev);
-  gameOver=false; mateLoserPos=null; mateWinnerPos=null;
-  selectedSq=null; highlightedMoves=[];
+  gameOver = false; mateLoserPos = null; mateWinnerPos = null;
+  selectedSq = null; highlightedMoves = [];
   updateBadges();
   setMsg("Hərəkət seçin.");
   renderBoard();
@@ -798,15 +993,16 @@ btnUndo.addEventListener("click",()=>{
 // ══════════════════════════════════════════════
 // REDO
 // ══════════════════════════════════════════════
-btnRedo.addEventListener("click",()=>{
-  if(gameMode==="challenge"||redoStack.length===0) return;
-  if(activeWorker){activeWorker.terminate();activeWorker=null;}
+btnRedo.addEventListener("click", () => {
+  if (gameMode==="challenge" || redoStack.length===0) return;
+  if (activeWorker) { activeWorker.terminate(); activeWorker = null; }
+  hideConfirmBar(); pendingMove = null; pendingPromotion = null;
   history.push(makeSnap());
-  const next=redoStack.pop();
+  const next = redoStack.pop();
   applySnap(next);
-  selectedSq=null; highlightedMoves=[];
+  selectedSq = null; highlightedMoves = [];
   updateBadges();
-  if(!gameOver&&currentPlayer===aiColor) scheduleBot();
+  if (!gameOver && currentPlayer === aiColor) scheduleBot();
   else setMsg("Hərəkət seçin.");
   renderBoard();
   renderMoveHistory();
@@ -815,46 +1011,182 @@ btnRedo.addEventListener("click",()=>{
 // ══════════════════════════════════════════════
 // RESIGN
 // ══════════════════════════════════════════════
-btnResign.addEventListener("click",()=>{
-  if(gameOver) return;
-  showModal("Təslim olmaq istədiyinə əminsən?",[
-    {label:"Bəli, təslim ol",cls:"danger",   action:doResign},
-    {label:"Xeyr, davam et", cls:"secondary",action:()=>{}},
+btnResign.addEventListener("click", () => {
+  if (gameOver) return;
+  showModal("Təslim olmaq istədiyinə əminsən?", [
+    { label:"Bəli, təslim ol", cls:"danger",    action: doResign },
+    { label:"Xeyr, davam et",  cls:"secondary", action: () => {} },
   ]);
 });
 
-function doResign(){
-  if(activeWorker){activeWorker.terminate();activeWorker=null;}
-  gameOver=true;
-  mateWinnerPos=getKingPos(aiColor,    board);
-  mateLoserPos =getKingPos(playerColor,board);
+function doResign() {
+  if (activeWorker) { activeWorker.terminate(); activeWorker = null; }
+  gameOver = true;
+  mateWinnerPos = getKingPos(aiColor,     board);
+  mateLoserPos  = getKingPos(playerColor, board);
   setMsg(`Təslim oldun. Qalib: ${botName}`);
   renderBoard();
-  showModal(`Təslim oldun. ${botName} qalib gəldi!`,[
-    {label:"Yenidən oyna",cls:"primary",  action:startGame},
-    {label:"Ana səhifə",  cls:"secondary",action:()=>showScreen("menu")},
+  showModal(`Təslim oldun. ${botName} qalib gəldi!`, [
+    { label:"Yenidən oyna", cls:"primary",   action: doStartGame },
+    { label:"Ana səhifə",   cls:"secondary", action: () => showScreen("menu") },
   ]);
 }
 
 // ══════════════════════════════════════════════
-// BOT — Web Worker ilə
+// SETTINGS PANEL
 // ══════════════════════════════════════════════
-function scheduleBot(){
+(function buildSettingsBtn() {
+  const bottomBar = document.querySelector(".bottom-bar .top-bar-right");
+  if (!bottomBar) return;
+
+  const btn = document.createElement("button");
+  btn.id = "btn-settings";
+  btn.className = "icon-btn";
+  btn.title = "Ayarlar";
+  btn.innerHTML = ` <img src="icons/settings.svg" alt="settings">`;
+  bottomBar.appendChild(btn);
+
+  btn.addEventListener("click", openSettingsPanel);
+})();
+
+function openSettingsPanel() {
+  // Build overlay (not fixed — use in-flow faux viewport trick for iframe compat)
+  const overlay = document.createElement("div");
+  overlay.id = "settings-overlay";
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.72);
+    display:flex;align-items:flex-end;justify-content:center;
+    z-index:300;animation:fade-in .18s ease;
+  `;
+
+  const panel = document.createElement("div");
+  panel.style.cssText = `
+    background:#1a1a1a;border:1px solid rgba(255,255,255,.1);
+    border-radius:16px 16px 0 0;width:100%;max-width:520px;
+    padding:20px 20px 32px;display:flex;flex-direction:column;gap:0;
+    animation:modal-in .22s cubic-bezier(.34,1.56,.64,1);
+  `;
+
+  // Header
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex;align-items:center;margin-bottom:20px;";
+  header.innerHTML = `
+    <span style="font-family:'Playfair Display',serif;font-size:1.1rem;color:var(--accent);flex:1;">Ayarlar</span>
+    <button id="settings-close" style="width:32px;height:32px;border:1px solid rgba(255,255,255,.15);border-radius:8px;background:rgba(255,255,255,.06);color:var(--text);font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;">✕</button>
+  `;
+  panel.appendChild(header);
+
+  // Settings items
+  const items = [
+    {
+      key: "confirmMove",
+      label: "Hər gedişi təsdiq et",
+      desc: null,
+    },
+    {
+      key: "showMoves",
+      label: "Mümkün gedişləri göstər",
+      desc: null,
+    },
+    {
+      key: "sound",
+      label: "Səs effektləri",
+      desc: null,
+    },
+    {
+      key: "autoQueen",
+      label: "Avto-Vəzir",
+      desc: "Piyada sonuncu xanaya çatdıqda avtomatik Vəzirə çevir.",
+    },
+  ];
+
+  items.forEach((item, idx) => {
+    const row = document.createElement("div");
+    row.style.cssText = `
+      display:flex;align-items:center;gap:12px;
+      padding:14px 0;
+      ${idx < items.length-1 ? "border-bottom:1px solid rgba(255,255,255,.07);" : ""}
+    `;
+
+    const textWrap = document.createElement("div");
+    textWrap.style.cssText = "flex:1;display:flex;flex-direction:column;gap:3px;";
+    textWrap.innerHTML = `<span style="font-size:.88rem;font-weight:600;color:var(--text);">${item.label}</span>`;
+    if (item.desc) {
+      const d = document.createElement("span");
+      d.style.cssText = "font-size:.74rem;color:var(--text-muted);line-height:1.4;";
+      d.textContent = item.desc;
+      textWrap.appendChild(d);
+    }
+
+    const toggle = buildToggle(settings[item.key], (val) => {
+      settings[item.key] = val;
+    });
+
+    row.appendChild(textWrap);
+    row.appendChild(toggle);
+    panel.appendChild(row);
+  });
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+
+  document.getElementById("settings-close").addEventListener("click", () => overlay.remove());
+  overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function buildToggle(initialValue, onChange) {
+  const wrap = document.createElement("label");
+  wrap.style.cssText = "position:relative;display:inline-block;width:48px;height:26px;flex-shrink:0;cursor:pointer;";
+
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = initialValue;
+  input.style.cssText = "opacity:0;width:0;height:0;position:absolute;";
+
+  const slider = document.createElement("span");
+  slider.style.cssText = `
+    position:absolute;inset:0;border-radius:26px;
+    background:${initialValue ? "var(--accent)" : "rgba(255,255,255,.15)"};
+    transition:background .2s;
+  `;
+  const thumb = document.createElement("span");
+  thumb.style.cssText = `
+    position:absolute;top:3px;left:${initialValue ? "25px" : "3px"};
+    width:20px;height:20px;border-radius:50%;background:#fff;
+    transition:left .2s;
+  `;
+  slider.appendChild(thumb);
+
+  input.addEventListener("change", () => {
+    const val = input.checked;
+    slider.style.background = val ? "var(--accent)" : "rgba(255,255,255,.15)";
+    thumb.style.left = val ? "25px" : "3px";
+    onChange(val);
+  });
+
+  wrap.appendChild(input);
+  wrap.appendChild(slider);
+  return wrap;
+}
+
+// ══════════════════════════════════════════════
+// BOT — Web Worker
+// ══════════════════════════════════════════════
+function scheduleBot() {
   setMsg(`düşünür...`);
   setTimeout(doBotMove, 100);
 }
 
-function doBotMove(){
-  if(gameOver||currentPlayer!==aiColor) return;
+function doBotMove() {
+  if (gameOver || currentPlayer !== aiColor) return;
 
-  // Əvvəlki worker varsa dayandır
-  if(activeWorker){activeWorker.terminate();activeWorker=null;}
+  if (activeWorker) { activeWorker.terminate(); activeWorker = null; }
 
   const worker = new Worker("./bot.js");
   activeWorker = worker;
 
   worker.postMessage({
-    board:       board.map(r=>[...r]),
+    board:       board.map(r => [...r]),
     depth:       aiDepth,
     aiColor,
     playerColor,
@@ -864,57 +1196,60 @@ function doBotMove(){
 
   worker.onmessage = (e) => {
     worker.terminate();
-    if(activeWorker===worker) activeWorker=null;
+    if (activeWorker === worker) activeWorker = null;
     const move = e.data;
-    if(move && !gameOver && currentPlayer===aiColor){
-      executeMove(move.from.row, move.from.col, move.to, aiColor, true);
+    if (move && !gameOver && currentPlayer === aiColor) {
+      executeMove(move.from.row, move.from.col, move.to, aiColor, true, null);
     }
   };
 
   worker.onerror = (err) => {
     console.error("Bot worker xətası:", err);
     worker.terminate();
-    if(activeWorker===worker) activeWorker=null;
+    if (activeWorker === worker) activeWorker = null;
   };
 }
 
 // ══════════════════════════════════════════════
 // MISC
 // ══════════════════════════════════════════════
-function isKingSquareInCheck(row,col){
-  const pc=board[row][col];
-  return pc&&tp(pc)==="K"?isKingInCheck(clr(pc),board):false;
+function isKingSquareInCheck(row, col) {
+  const pc = board[row][col];
+  return pc && tp(pc) === "K" ? isKingInCheck(clr(pc), board) : false;
 }
-function setMsg(text){ msgEl.textContent=text; }
+function setMsg(text) { msgEl.textContent = text; }
 
 // ══════════════════════════════════════════════
-// CONFETTI
+// CONFETTI  — only when player wins
 // ══════════════════════════════════════════════
-function launchConfetti(){
-  const canvas=document.createElement("canvas");
-  Object.assign(canvas.style,{position:"fixed",top:"0",left:"0",width:"100%",height:"100%",pointerEvents:"none",zIndex:"999"});
+function launchConfetti() {
+  const canvas = document.createElement("canvas");
+  Object.assign(canvas.style, {
+    position:"fixed",top:"0",left:"0",width:"100%",height:"100%",
+    pointerEvents:"none",zIndex:"999",
+  });
   document.body.appendChild(canvas);
-  canvas.width=window.innerWidth; canvas.height=window.innerHeight;
-  const ctx=canvas.getContext("2d");
-  const colors=["#ff2244","#00ff88","#c9a84c","#4fc3f7","#ff80ab","#b39ddb","#fff176","#ffab40"];
-  const pieces=Array.from({length:180},()=>({
-    x:Math.random()*canvas.width, y:-20-Math.random()*200,
-    w:8+Math.random()*10, h:4+Math.random()*6,
-    color:colors[Math.floor(Math.random()*colors.length)],
-    rot:Math.random()*Math.PI*2, rotS:(Math.random()-.5)*.2,
-    vx:(Math.random()-.5)*4, vy:2.5+Math.random()*4, op:1,
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  const ctx = canvas.getContext("2d");
+  const colors = ["#ff2244","#00ff88","#c9a84c","#4fc3f7","#ff80ab","#b39ddb","#fff176","#ffab40"];
+  const pieces = Array.from({length:180}, () => ({
+    x: Math.random() * canvas.width, y: -20 - Math.random() * 200,
+    w: 8 + Math.random() * 10, h: 4 + Math.random() * 6,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    rot: Math.random() * Math.PI * 2, rotS: (Math.random() - .5) * .2,
+    vx: (Math.random() - .5) * 4, vy: 2.5 + Math.random() * 4, op: 1,
   }));
-  let frame=0; const MAX=230;
-  (function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    for(const p of pieces){
-      p.x+=p.vx; p.y+=p.vy; p.vy+=.07; p.rot+=p.rotS;
-      if(frame>MAX*.6) p.op=Math.max(0,p.op-.016);
-      ctx.save(); ctx.globalAlpha=p.op;
-      ctx.translate(p.x,p.y); ctx.rotate(p.rot);
-      ctx.fillStyle=p.color; ctx.fillRect(-p.w/2,-p.h/2,p.w,p.h);
+  let frame = 0; const MAX = 230;
+  (function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of pieces) {
+      p.x += p.vx; p.y += p.vy; p.vy += .07; p.rot += p.rotS;
+      if (frame > MAX * .6) p.op = Math.max(0, p.op - .016);
+      ctx.save(); ctx.globalAlpha = p.op;
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.fillStyle = p.color; ctx.fillRect(-p.w/2, -p.h/2, p.w, p.h);
       ctx.restore();
     }
-    if(++frame<MAX) requestAnimationFrame(draw); else canvas.remove();
+    if (++frame < MAX) requestAnimationFrame(draw); else canvas.remove();
   })();
 }
