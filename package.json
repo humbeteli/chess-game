@@ -1,0 +1,26 @@
+{
+  "name": "code_mate",
+  "version": "1.0.0",
+  "description": "Bu proyekt, brauzerdə oynanıla bilən bir şahmat oyunudur. Ağ və qara fiqurlar sırayla oynayır, məqsəd rəqib şahı mat etməkdir.",
+  "main": "bot.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/humbeteli/chess-game.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/humbeteli/chess-game/issues"
+  },
+  "homepage": "https://github.com/humbeteli/chess-game#readme",
+  "dependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/cli": "^8.3.4",
+    "@capacitor/core": "^8.3.4"
+  }
+}

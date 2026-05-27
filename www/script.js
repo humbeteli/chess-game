@@ -1253,3 +1253,18 @@ function launchConfetti() {
     if (++frame < MAX) requestAnimationFrame(draw); else canvas.remove();
   })();
 }
+
+// ══════════════════════════════════════════════
+// BACK BUTTON — Capacitor (no import)
+// ══════════════════════════════════════════════
+document.addEventListener("DOMContentLoaded", () => {
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App) {
+    window.Capacitor.Plugins.App.addListener("backButton", () => {
+      if (screenGame.classList.contains("active")) {
+        btnMenuBtn.click();
+      } else {
+        window.Capacitor.Plugins.App.exitApp();
+      }
+    });
+  }
+});

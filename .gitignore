@@ -1,0 +1,12 @@
+# dependencies
+node_modules/
+
+# android build files
+android/
+
+# logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
