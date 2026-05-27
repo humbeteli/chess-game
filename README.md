@@ -17,4 +17,4 @@ Bu proyekt, brauzerdə oynanıla bilən bir şahmat oyunudur. Ağ və qara fiqur
 - Ayarlar menyusu
 
 ## Demo Link
-[![Deploy with Vercel](https://vercel.com/button)](https://chess-game-bice-iota.vercel.app/)
+[![Deploy with Vercel](https://vercel.com/button)](https://chess-game-be7z.vercel.app/)
