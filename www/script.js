@@ -459,14 +459,9 @@ function doStartGame() {
   if (aiColor === "w") scheduleBot();
 }
 
-// keep old alias
-function startGame() {
-  doStartGame();
-}
-
 function updateLabels() {
-  labelTop.textContent = playerColor === "w" ? `${botName}` : `${botName}`;
-  labelBotEl.textContent = playerColor === "w" ? "Sən" : "Sən";
+  labelTop.textContent = botName;
+  labelBotEl.textContent = "Sən";
 }
 
 function createInitialBoard() {
@@ -1364,7 +1359,9 @@ function doResign() {
 // ══════════════════════════════════════════════
 // SETTINGS PANEL
 // ══════════════════════════════════════════════
-document.getElementById("btn-settings").addEventListener("click", openSettingsPanel);
+document
+  .getElementById("btn-settings")
+  .addEventListener("click", openSettingsPanel);
 
 function openSettingsPanel() {
   // Build overlay (not fixed — use in-flow faux viewport trick for iframe compat)
