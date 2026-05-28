@@ -14,7 +14,9 @@
     <!-- ══ ANA SƏHİFƏ ══ -->
     <div id="screen-menu" class="screen active">
       <div class="menu-wrap">
-        <div class="menu-crown"><img src="icons/chess-logo.svg" alt="" /></div>
+        <div class="menu-crown">
+          <img src="icons/chess-logo.svg" alt="logo" />
+        </div>
         <h1 class="menu-title">CodeMate</h1>
         <p class="menu-sub">Kompüterə qarşı oyna</p>
         <div class="menu-card">
@@ -22,11 +24,12 @@
             <label class="field-label">Oyun növü</label>
             <div class="segmented" id="seg-mode">
               <button class="seg-btn active" data-value="friendly">
-                <img src="icons/friend-active.svg" alt="" />
+                <img src="icons/friend-active.svg" alt="dostluq" />
                 Dostluq
               </button>
               <button class="seg-btn" data-value="challenge">
-                <img src="icons/sword-active.svg" alt="" /> Meydan oxuma
+                <img src="icons/sword-active.svg" alt="meydan oxuma" /> Meydan
+                oxuma
               </button>
             </div>
             <p class="field-hint" id="mode-hint">
@@ -47,13 +50,13 @@
             <label class="field-label">Rəng</label>
             <div class="segmented" id="seg-color">
               <button class="seg-btn active" data-value="w">
-                <img src="icons/secim-ag.svg" alt="" /> Ağ
+                <img src="icons/secim-ag.svg" alt="ag" /> Ağ
               </button>
               <button class="seg-btn" data-value="b">
-                <img src="icons/secim-qara.svg" alt="" /> Qara
+                <img src="icons/secim-qara.svg" alt="qara" /> Qara
               </button>
               <button class="seg-btn" data-value="r">
-                <img src="icons/dice.svg" alt="" /> Təsadüfi
+                <img src="icons/dice.svg" alt="tesadufi" /> Təsadüfi
               </button>
             </div>
           </div>
@@ -66,10 +69,15 @@
     <!-- ══ OYUN SƏHİFƏSİ ══ -->
     <div id="screen-game" class="screen">
       <div class="game-wrap">
+        <div class="gameLogo">
+          <img src="icons/chess-logo.svg" alt="logo" class="game-logo" />
+          <p class="game-title">CodeMate</p>
+        </div>
         <!-- Top bar -->
+
         <div class="top-bar">
           <button id="btn-menu" class="icon-btn" title="Menyu">
-            <img src="icons/back-chess.svg" alt="" />
+            <img src="icons/back1.svg" alt="menyu" />
           </button>
           <div class="player-info">
             <span class="player-badge" id="badge-top">●</span>
@@ -78,11 +86,10 @@
           <span id="game-message" class="game-msg">Hərəkət seçin.</span>
         </div>
 
-        <!-- Move history — taxtadan YUXARIDA, 1 sətir horizontal -->
+        <!-- Move history -->
         <div class="moves-panel" id="moves-panel">
           <div class="moves-list" id="moves-list"></div>
         </div>
-
         <!-- Board — koordinatlar xananın içindədir -->
         <div class="board-shell">
           <div id="board" class="board"></div>
@@ -90,16 +97,23 @@
 
         <!-- Bottom bar -->
         <div class="bottom-bar">
+          <button id="btn-settings" class="icon-btn" title="Ayarlar">
+            <img src="icons/settings.svg" alt="ayarlar" />
+          </button>
           <div class="player-info">
             <span class="player-badge" id="badge-bottom">●</span>
             <span class="player-label" id="label-bottom">Sən</span>
           </div>
 
           <div class="top-bar-right">
-            <button id="btn-undo" class="icon-btn" title="Geri al">↩</button>
-            <button id="btn-redo" class="icon-btn" title="İrəli al">↪</button>
             <button id="btn-resign" class="icon-btn danger" title="Təslim ol">
-              🏳️
+              <img src="icons/teslim.svg" alt="teslim ol" />
+            </button>
+            <button id="btn-undo" class="icon-btn" title="Geri al">
+              <img src="icons/geri.svg" alt="geri al" />
+            </button>
+            <button id="btn-redo" class="icon-btn" title="İrəli al">
+              <img src="icons/ireli.svg" alt="ireli" />
             </button>
           </div>
         </div>
